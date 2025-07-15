@@ -1,0 +1,172 @@
+---
+title: "220598721"
+output: html_document
+date: "03-04-2025"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# ST2195 Programming for Data Science Coursework
+
+## Part 2
+Year 1996 to year 2000 were chosen as the consecutive five subset years in this part.
+The dataset gone through exploratory data analysis process to ensure the completeness of the dataset.
+
+```{r Data-preprocessing}
+# Load all the necessary packages 
+library(tidyverse)
+library(lubridate)
+library(ggplot2)
+library(broom)
+library(DataExplorer)
+library(corrplot)
+
+# Load datasets from 1996 to 2000 manually
+flights_1996 <- read.csv("1996.csv")
+flights_1997 <- read.csv("1997.csv")
+flights_1998 <- read.csv("1998.csv")
+flights_1999 <- read.csv("1999.csv")
+flights_2000 <- read.csv("2000.csv")
+
+flights_raw <- bind_rows(flights_1996, flights_1997, flights_1998, flights_1999, flights_2000)
+
+# Exploratory Data Analysis (EDA) on the dataset
+# Sample the first 5000 rows of data since it is a big dataset
+flights_eda <- flights_raw %>% sample_n(min(5000, nrow(flights_raw)))
+
+## Check structure of dataset
+str(flights_eda)
+
+## Get summary statistics for numeric columns
+summary(select_if(flights_eda, is.numeric))
+
+## Count missing values in each column
+colSums(is.na(flights_eda))
+
+## Visualize missing values
+plot_missing(flights_eda)
+
+## Show percentage of missing values per column
+missing_percent <- colMeans(is.na(flights_eda)) * 100
+print(missing_percent[missing_percent > 0])  # Only columns with missing values
+
+## Name the columns with 100% missing values
+cols_all_na <- names(flights_eda)[colMeans(is.na(flights_raw)) == 1]
+
+## Remove rows with NA, ignoring the 100% missing columns
+cleaned_flights <- flights_eda %>%
+  select(-all_of(cols_all_na)) %>%  # Remove 100% missing columns
+  filter(if_all(everything(), ~ !is.na(.)))  # Remove rows with any NA
+
+## Display structure of cleaned dataset
+str(cleaned_flights)
+
+# Compute correlation matrix for numeric columns
+corr_matrix <- cor(numeric_cols, use = "pairwise.complete.obs")
+
+## Visualize correlation (adjust text size for large datasets)
+corrplot(corr_matrix, method = "color", tl.cex = 0.6)
+```
+
+## a) The best times and days to minimise the flights delays.
+```{r Question-a}
+## Convert dates and times
+flights <- cleaned_flights %>% 
+  mutate(DATE = make_date(Year, Month, DayofMonth),
+         DAY_OF_WEEK = factor(DayOfWeek, 
+                              levels = 1:7, 
+                              labels = c("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday")),
+         YEAR = Year)
+
+flights_1 <- flights %>% mutate(TOTAL_DELAY = ArrDelay + DepDelay)
+
+## Average delay by hour
+hourly_delays <- flights_1 %>%
+  group_by(YEAR, HOUR = floor(CRSDepTime / 100)) %>%
+  summarise(Mean_Delay = mean(TOTAL_DELAY, na.rm = TRUE))
+
+## Find the minimum delay by hour for each year
+min_delays <- hourly_delays %>% group_by(YEAR) %>% slice_min(Mean_Delay, n = 1)
+
+## Plot delays by hour
+ggplot(hourly_delays, aes(x = HOUR, y = Mean_Delay, color = as.factor(YEAR))) +
+  geom_line() +
+  geom_point(data = min_delays, aes(x = HOUR, y = Mean_Delay), size = 3) +
+  geom_text(data = min_delays, aes(x = HOUR, y = Mean_Delay, label = round(Mean_Delay, 1)), color = "black", vjust = -0.5) +
+  scale_x_continuous(breaks = seq(0, 24, by = 2), limits = c(0, 24), labels = sprintf("%02d00", seq(0, 24, by = 2))) +
+  labs(title = "Average Flight Delay by Hour", x = "Scheduled Departure Hour (24-hour format)", y = "Mean Delay (mins)")
+
+## Average delay by day
+daily_delays <- flights_1 %>%
+  group_by(YEAR, DAY_OF_WEEK) %>%
+  summarise(Mean_Delay = mean(TOTAL_DELAY, na.rm = TRUE))
+
+## Find the minimum delay for each year across the week
+min_weekly_delays <- daily_delays %>% group_by(YEAR) %>% slice_min(Mean_Delay, n = 1)
+
+## Plot delays by day
+ggplot(daily_delays, aes(x = DAY_OF_WEEK, y = Mean_Delay, fill = as.factor(YEAR))) +
+  geom_bar(stat = "identity", position = "dodge") +
+  geom_text(data = min_weekly_delays, aes(x = DAY_OF_WEEK, y = Mean_Delay, label = round(Mean_Delay, 1)), color = "black", vjust = -0.5, position = position_dodge(width = 0.9)) +
+  labs(title = "Average Flight Delay by Day of the Week", x = "Day of Week", y = "Mean Delay (mins)")
+```
+
+## b) Evaluate whether older planes will suffer more flight delays on a year-to-year basis.
+```{r Question-b}
+planes_raw <- read.csv("plane-data.csv") 
+planes <- planes_raw %>% rename(TailNum = tailnum)
+flights_raw2 <- flights %>% mutate(TOTAL_DELAY = ArrDelay + DepDelay)
+flights_2 <- left_join(flights_raw2, planes, by = "TailNum")
+
+# Group by year and age, then calculate mean delay
+age_delays <- flights_2 %>%
+  mutate(AGE = 2025 - as.numeric(Year)) %>%
+  group_by(YEAR, AGE) %>%
+  summarise(Mean_Delay = mean(TOTAL_DELAY, na.rm = TRUE))
+
+# Create an Age group categorization
+age_delays <- age_delays %>%
+  mutate(Age_Group = case_when(
+    AGE <= 10 ~ "Young (0-10 years)",
+    AGE > 10 & AGE <= 20 ~ "Medium (11-20 years)",
+    AGE > 20 ~ "Old (>20 years)"
+  ))
+
+# Plot delays by age group for each year
+ggplot(age_delays_filtered, aes(x = AGE, y = Mean_Delay, color = Age_Group)) +
+  geom_point() +
+  geom_smooth(method = "lm") +
+  labs(title = "Flight Delay vs. Aircraft Age by Year", 
+       x = "Aircraft Age (years)", 
+       y = "Mean Delay (mins)") +
+  facet_wrap(~ YEAR) +  # Separate the plot by year
+  theme_minimal()
+```
+
+## c) Logistic Regression for Diverted Flights across the years and the visualization of the coefficients of the features
+```{r Question-c}
+flights_3 <- flights_eda %>% 
+  mutate(DATE = make_date(Year, Month, DayofMonth),
+         DAY_OF_WEEK = factor(DayOfWeek, 
+                              levels = 1:7, 
+                              labels = c("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday")),
+         YEAR = Year)
+flights_3$Diverted <- as.factor(flights_3$Diverted)  
+
+logistic_model <- glm(Diverted ~ CRSDepTime + CRSArrTime + Distance + UniqueCarrier + DAY_OF_WEEK , 
+                      data = flights_3, family = binomial)
+
+# Summary of model
+summary(logistic_model)
+
+# Extract and visualize coefficients
+coefs <- tidy(logistic_model)
+ggplot(coefs, aes(x = term, y = estimate, fill = term)) +
+  geom_bar(stat = "identity") +
+  labs(title = "Logistic Regression Coefficients for Flight Diversions", x = "Variable", y = "Coefficient") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+# End of R code

@@ -1,0 +1,128 @@
+---
+title: '220598721'
+output: html_document
+date: "03-04-2025"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# ST2195 Programming for Data Science Coursework
+
+## Part 1 (a)
+To generate a sample consists of random numbers by using the Metropolis- Hastings algorithm, for the distribution of the probability density function as below:
+
+\[ f(x) = \frac{1}{2} \exp(-|x|) \]
+
+## To apply the Metropolis- Hastings algorithm:
+
+```{r Metropolis-hastings}
+set.seed(123)
+
+Metropolis_hastings <- function(N, s, x0 = 0) {
+  log_f <- function(x) { -abs(x) - log(2) } #By applying the practical tip
+  x <- numeric(N)
+  x[1] <- x0
+  
+  for (i in 2:N) {
+    x_star <- rnorm(1, mean = x[i-1], sd = s)
+    log_r <- log_f(x_star) - log_f(x[i-1])
+    
+    if (log(runif(1)) < log_r) {
+      x[i] <- x_star
+    } else {
+      x[i] <- x[i-1]
+    }
+  }
+  
+  return(x)
+}
+
+## Set the values for all the parameters
+N <- 10000
+s <- 1
+samples <- Metropolis_hastings(N, s)
+```
+
+## Including Histogram and Kernel Density Plots
+
+```{r Histogram-KernelDensity, echo=TRUE}
+library(ggplot2)
+
+Part1a_df <- data.frame(samples = samples)
+
+ggplot(Part1a_df, aes(x = samples)) +
+  geom_histogram(aes(y = after_stat(density)), bins = 50, color = "blue", fill = "blue", alpha = 0.6) +
+  geom_density(color = "black", linewidth = 0.7) +
+  stat_function(fun = function(x) 0.5 * exp(-abs(x)), color = "orange", linewidth = 1.2, linetype = "dashed") +
+  labs(title = "Histogram and Kernel Density Plot of generated samples and estimates of f(x)",
+       x = "x", y = "Density") +
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5))
+ 
+```
+## Report the Monte-Carlo estimates of the mean and standard deviation
+
+```{r Monte-Carlo-estimates}
+mean_estimate <- mean(samples)
+sd_estimate <- sd(samples)
+
+cat("Monte Carlo Estimate of Mean:", mean_estimate, "\n")
+cat("Monte Carlo Estimate of Standard Deviation:", sd_estimate, "\n")
+```
+## Part 1 (b)
+To calculate the $\widehat{R}$ and provide a plot of the values of $\widehat{R}$ across s values.
+
+## R_hat for Different Chains
+
+```{r R-hat-computation}
+compute_Rhat <- function(N, s, J) {
+  chains <- replicate(J, Metropolis_hastings(N, s, x0 = rnorm(1)), simplify = FALSE)
+  
+  Mj <- sapply(chains, mean)
+  Vj <- sapply(chains, var)
+  W <- mean(Vj)
+  M <- mean(Mj)
+  B <- mean((Mj - M)^2)
+  
+  R_hat <- sqrt((B + W) / W)
+  return(R_hat)
+}
+
+N <- 2000
+J <- 4
+s_values <- seq(0.001, 1, length.out = 20)
+Rhat_values <- sapply(s_values, function(s) compute_Rhat(N, s, J))
+```
+
+## Calculate the R-hat values with N = 2000, s = 0.001, J = 4
+
+```{r Rhat-plot}
+Rhat_at_s <- compute_Rhat(N = 2000, s = 0.001, J = 4)
+
+cat("The R-hat value at s = 0.001 is", Rhat_at_s, "\n")
+
+```
+
+## Plot of R-hat values in the interval of s values between 0.001 and 1
+
+```{r Rhat-plot}
+Rhat_df <- data.frame(s_values, Rhat_values)
+
+ggplot(Rhat_df, aes(x = s_values, y = Rhat_values)) +
+  geom_line(color = "blue") +
+  geom_hline(yintercept = 1.05, linetype = "dashed", color = "red") +
+  ggtitle("R-hat Values Across Different s values in the interval between 0.001 and 1") +
+  xlab("s") +
+  ylab("R-hat") +
+  theme_minimal()
+```
+
+
+
+
+
+
+
+
